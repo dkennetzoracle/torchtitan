@@ -115,18 +115,25 @@ class ParallelDims:
             Uses fake backend for dimensions with degree 1 or for 'batch' dimension
             to avoid unnecessary process group creation.
             """
-            backend_override = {}
-            for name, degree in zip(dim_names, dim_degrees, strict=True):
-                if not self._mesh_exist(name, degree):
-                    backend_override[name] = "fake"
-
-            return world_mesh._unflatten(
-                0,
-                dim_degrees,
-                dim_names,
-                # pyrefly: ignore [bad-argument-type]
-                backend_override=backend_override,
-            )
+            if hasattr(world_mesh, "_unflatten"):
+                backend_override = {}
+                for name, degree in zip(dim_names, dim_degrees, strict=True):
+                    if not self._mesh_exist(name, degree):
+                        backend_override[name] = "fake"
+                return world_mesh._unflatten(
+                    0,
+                    dim_degrees,
+                    dim_names,
+                    # pyrefly: ignore [bad-argument-type]
+                    backend_override=backend_override,
+                )
+            else:
+                # Fallback for older PyTorch versions without DeviceMesh._unflatten
+                return init_device_mesh(
+                    device_type,
+                    dim_degrees,
+                    mesh_dim_names=dim_names,
+                )
 
         logger.info(
             f"Building device mesh with parallelism: "
@@ -165,6 +172,12 @@ class ParallelDims:
             "sparse": sparse_mesh,
         }
 
+        # When _unflatten is unavailable (older torch), dataloading_mesh and
+        # dense_mesh are independent root meshes.  FSDP2 requires that the DP
+        # mesh ("fsdp") and the TP mesh share the same parent mesh.  We satisfy
+        # that by sourcing "tp" from dense_mesh so both come from the same root.
+        _use_dense_for_tp = not hasattr(self._world_mesh, "_unflatten")
+
         self._meshes = {
             "pp": dataloading_mesh["pp"],
             "batch": dataloading_mesh["batch"],
@@ -172,7 +185,7 @@ class ParallelDims:
             "dp_replicate": dense_mesh["dp_replicate"],
             "fsdp": dense_mesh["fsdp"],
             "cp": dataloading_mesh["cp"],
-            "tp": dataloading_mesh["tp"],
+            "tp": dense_mesh["tp"] if _use_dense_for_tp else dataloading_mesh["tp"],
             "ep": sparse_mesh["ep"],
             "efsdp": sparse_mesh["efsdp"],
             "etp": sparse_mesh["etp"],

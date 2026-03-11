@@ -10,7 +10,12 @@
 import torch
 import torch.nn as nn
 from torch.distributed._composable.fsdp import FSDPModule
-from torch.distributed._composable.replicate_with_fsdp import replicate
+try:
+    from torch.distributed._composable.replicate_with_fsdp import replicate
+    _REPLICATE_WITH_FSDP_AVAILABLE = True
+except ImportError:
+    replicate = None  # type: ignore[assignment]
+    _REPLICATE_WITH_FSDP_AVAILABLE = False
 from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.fsdp import CPUOffloadPolicy, fully_shard, MixedPrecisionPolicy
 from torch.distributed.tensor import Replicate, Shard
@@ -53,10 +58,20 @@ _op_sac_save_list = {
     # the result of max, since the absolute maximum is
     # used to compute the scaling factor for quantization.
     torch.ops.aten.max.default,
-    torch._higher_order_ops.flex_attention,
-    torch.ops.torch_attn._varlen_attn.default,
-    torch._higher_order_ops.inductor_compiled_code,
 }
+# Conditionally add ops that may not exist in older torch versions
+try:
+    _op_sac_save_list.add(torch._higher_order_ops.flex_attention)
+except AttributeError:
+    pass
+try:
+    _op_sac_save_list.add(torch.ops.torch_attn._varlen_attn.default)
+except AttributeError:
+    pass
+try:
+    _op_sac_save_list.add(torch._higher_order_ops.inductor_compiled_code)
+except AttributeError:
+    pass
 
 
 def parallelize_llama(

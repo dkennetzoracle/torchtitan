@@ -9,12 +9,25 @@ from typing import cast
 import torch
 import torch.nn as nn
 from torch import Tensor
-from torch.distributed.pipelining.schedules import (
-    _Action,
-    _PipelineContext,
-    _PipelineScheduleRuntime,
-    _wait_batch_p2p,
-)
+try:
+    from torch.distributed.pipelining.schedules import (
+        _Action,
+        _PipelineContext,
+        _PipelineScheduleRuntime,
+        _wait_batch_p2p,
+    )
+    _DUAL_PIPE_AVAILABLE = True
+except ImportError:
+    _DUAL_PIPE_AVAILABLE = False
+    # Sentinel stubs so type annotations and class bodies don't fail at load time.
+    class _Action:  # type: ignore[no-redef]
+        pass
+    class _PipelineContext:  # type: ignore[no-redef]
+        pass
+    class _PipelineScheduleRuntime:  # type: ignore[no-redef]
+        pass
+    def _wait_batch_p2p(*args, **kwargs):  # type: ignore[no-redef]
+        raise ImportError("DualPipeV requires a recent PyTorch nightly.")
 from torch.distributed.pipelining.stage import _PipelineStageBase
 from torch.distributed.tensor import DeviceMesh, distribute_module
 from torch.profiler import record_function
@@ -193,7 +206,7 @@ def _count_moe_modules(model):
 device_type, device_module = get_device_info()
 
 
-def overlap_callback(action: _Action, ctx: _PipelineContext):
+def overlap_callback(action: _Action, ctx: _PipelineContext):  # noqa: F821
     """
     Custom callback for OVERLAP_F_B computation that allows expert parallel communication
     and pipeline parallel computation to overlap.

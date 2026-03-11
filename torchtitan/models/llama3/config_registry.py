@@ -4,7 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
+
 from torchtitan.components.checkpoint import CheckpointManager
+from torchtitan.components.dataloader_synthetic import SyntheticDataLoader
 from torchtitan.components.lr_scheduler import LRSchedulersContainer
 from torchtitan.components.metrics import MetricsProcessor
 from torchtitan.components.optimizer import (
@@ -212,5 +215,76 @@ def llama3_405b() -> Trainer.Config:
         validator=Validator.Config(
             freq=500,
             steps=1200,
+        ),
+    )
+
+
+def llama3_health_check() -> Trainer.Config:
+    """Health-check config: runs llama3-8B with synthetic data to report TFLOPs.
+
+    Designed for Kubernetes liveness/performance checks.  No tokenizer,
+    no dataset download, no checkpointing required.
+
+    Usage:
+        MODULE=llama3 CONFIG=llama3_health_check ./run_train.sh
+    """
+    return Trainer.Config(
+        tokenizer=None,
+        model_spec=model_registry("8B"),
+        optimizer=OptimizersContainer.Config(lr=3e-4),
+        training=TrainingConfig(
+            local_batch_size=int(os.environ.get("LOCAL_BATCH_SIZE", "2")),
+            seq_len=int(os.environ.get("SEQ_LEN", "8192")),
+            steps=int(os.environ.get("STEPS", "20")),
+            dtype="bfloat16",
+        ),
+        dataloader=SyntheticDataLoader.Config(vocab_size=128256),
+        parallelism=ParallelismConfig(
+            tensor_parallel_degree=8,
+            data_parallel_replicate_degree=1,
+            data_parallel_shard_degree=int(os.environ.get("NNODES", "1")),
+        ),
+        metrics=MetricsProcessor.Config(log_freq=5),
+        compile=CompileConfig(enable=os.environ.get("COMPILE", "0") == "1"),
+        checkpoint=CheckpointManager.Config(enable=False),
+        activation_checkpoint=ActivationCheckpointConfig(
+            mode="selective",
+            selective_ac_option="op",
+        ),
+    )
+
+
+def llama3_70b_health_check() -> Trainer.Config:
+    """Health-check config: runs llama3-70B with synthetic data to report TFLOPs.
+
+    70B is compute-bound (vs 8B which is memory-bandwidth-bound), so this
+    config produces higher MFU and is a better measure of peak throughput.
+    Requires at least 2 nodes (16 GPUs) with TP=8 and FSDP across nodes.
+
+    Usage:
+        MODULE=llama3 CONFIG=llama3_70b_health_check ./run_train.sh
+    """
+    return Trainer.Config(
+        tokenizer=None,
+        model_spec=model_registry("70B"),
+        optimizer=OptimizersContainer.Config(lr=1.5e-4),
+        training=TrainingConfig(
+            local_batch_size=int(os.environ.get("LOCAL_BATCH_SIZE", "1")),
+            seq_len=int(os.environ.get("SEQ_LEN", "8192")),
+            steps=int(os.environ.get("STEPS", "20")),
+            dtype="bfloat16",
+        ),
+        dataloader=SyntheticDataLoader.Config(vocab_size=128256),
+        parallelism=ParallelismConfig(
+            tensor_parallel_degree=8,
+            data_parallel_replicate_degree=1,
+            data_parallel_shard_degree=int(os.environ.get("NNODES", "1")),
+        ),
+        metrics=MetricsProcessor.Config(log_freq=5),
+        compile=CompileConfig(enable=os.environ.get("COMPILE", "0") == "1"),
+        checkpoint=CheckpointManager.Config(enable=False),
+        activation_checkpoint=ActivationCheckpointConfig(
+            mode="selective",
+            selective_ac_option="op",
         ),
     )

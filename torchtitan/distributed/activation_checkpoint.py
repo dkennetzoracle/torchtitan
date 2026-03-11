@@ -13,6 +13,8 @@ from collections import defaultdict
 import torch
 import torch._functorch.config
 import torch.nn as nn
+import inspect
+
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     checkpoint_wrapper as ptd_checkpoint_wrapper,
 )
@@ -20,8 +22,30 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
 from torchtitan.config import ActivationCheckpointConfig as ACConfig
 from torchtitan.tools.logging import logger
 
+# Detect whether ptd_checkpoint_wrapper accepts newer parameters
+_ptd_ckpt_params = inspect.signature(ptd_checkpoint_wrapper).parameters
+_CKPT_SUPPORTS_EARLY_STOP = "early_stop" in _ptd_ckpt_params
+_CKPT_SUPPORTS_DEBUG = "debug" in _ptd_ckpt_params
+_CKPT_SUPPORTS_DETERMINISM = "determinism_check" in _ptd_ckpt_params
+_CKPT_SUPPORTS_PRESERVE_RNG = "preserve_rng_state" in _ptd_ckpt_params
 
 _layer_sac_count = 0
+
+
+def _ptd_checkpoint_wrapper(module, *, context_fn=None, ac_config: "ACConfig"):
+    """Wrapper around ptd_checkpoint_wrapper that skips unsupported kwargs."""
+    kwargs = {}
+    if _CKPT_SUPPORTS_PRESERVE_RNG:
+        kwargs["preserve_rng_state"] = ac_config.preserve_rng_state
+    if _CKPT_SUPPORTS_DETERMINISM:
+        kwargs["determinism_check"] = ac_config.determinism_check
+    if _CKPT_SUPPORTS_EARLY_STOP:
+        kwargs["early_stop"] = ac_config.early_stop
+    if _CKPT_SUPPORTS_DEBUG:
+        kwargs["debug"] = ac_config.debug
+    if context_fn is not None:
+        kwargs["context_fn"] = context_fn
+    return ptd_checkpoint_wrapper(module, **kwargs)
 
 
 def _apply_layer_sac(module: nn.Module, ac_config: ACConfig) -> nn.Module:
@@ -38,13 +62,7 @@ def _apply_layer_sac(module: nn.Module, ac_config: ACConfig) -> nn.Module:
     _layer_sac_count += 1
     ac_freq = int(ac_config.selective_ac_option)
     if not ac_freq or _layer_sac_count % ac_freq == 0:
-        return ptd_checkpoint_wrapper(
-            module,
-            preserve_rng_state=ac_config.preserve_rng_state,
-            determinism_check=ac_config.determinism_check,
-            early_stop=ac_config.early_stop,
-            debug=ac_config.debug,
-        )
+        return _ptd_checkpoint_wrapper(module, ac_config=ac_config)
     else:
         return module
 
@@ -138,13 +156,10 @@ def _apply_op_sac(
         meta = defaultdict(int)
         return create_selective_checkpoint_contexts(_get_custom_policy(meta))
 
-    return ptd_checkpoint_wrapper(
+    return _ptd_checkpoint_wrapper(
         module,
         context_fn=selective_checkpointing_context_fn,
-        preserve_rng_state=ac_config.preserve_rng_state,
-        determinism_check=ac_config.determinism_check,
-        early_stop=ac_config.early_stop,
-        debug=ac_config.debug,
+        ac_config=ac_config,
     )
 
 
@@ -158,13 +173,7 @@ def _apply_full_ac(module: nn.Module, ac_config: ACConfig) -> nn.Module:
     Returns:
         nn.Module: The module with full activation checkpointing applied.
     """
-    return ptd_checkpoint_wrapper(
-        module,
-        preserve_rng_state=ac_config.preserve_rng_state,
-        determinism_check=ac_config.determinism_check,
-        early_stop=ac_config.early_stop,
-        debug=ac_config.debug,
-    )
+    return _ptd_checkpoint_wrapper(module, ac_config=ac_config)
 
 
 def _apply_ac_to_transformer_block(
@@ -232,7 +241,8 @@ def apply_ac(
     #
     # Also see: https://github.com/pytorch/pytorch/issues/166926
     # pyrefly: ignore [missing-attribute]
-    torch._C._dynamo.eval_frame._set_lru_cache(False)
+    if hasattr(torch._C._dynamo.eval_frame, "_set_lru_cache"):
+        torch._C._dynamo.eval_frame._set_lru_cache(False)
 
     if ac_config.mode == "memory_budget":
         assert model_compile_enabled, "Memory budget mode requires model to be compiled"

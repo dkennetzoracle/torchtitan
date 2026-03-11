@@ -32,8 +32,8 @@ class Embedding(nn.Embedding, Module):
         # ``num_embeddings`` and ``embedding_dim`` are usually passed by the
         # parent modules through build(). Using field(init=False) excludes
         # them from Config.__init__.
-        num_embeddings: int = field(init=False)
-        embedding_dim: int = field(init=False)
+        num_embeddings: int = field(init=False, default=0)
+        embedding_dim: int = field(init=False, default=0)
         init_mean: float = 0.0
         init_std: float = 1.0
 

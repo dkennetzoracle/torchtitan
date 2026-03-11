@@ -1,0 +1,28 @@
+# Dockerfile for torchtitan on OCI OKE with AMD ROCm GPUs (e.g. BM.GPU.MI300X.8).
+#
+# Build:
+#   docker build -f kubernetes/Dockerfile.rocm \
+#     -t <registry>/torchtitan:rocm-<tag> .
+#
+# Base image: AMD's curated primus image (gfx942 = MI300X) which ships the
+# correct PyTorch + ROCm + RCCL stack verified to work on MI300X hardware.
+# See: https://rocm.docs.amd.com/projects/ai-developer-hub/en/latest/notebooks/pretrain/torchtitan_deepseek.html
+
+FROM docker.io/rocm/primus:v25.9_gfx942
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /workspace/torchtitan
+
+# Install Python dependencies before copying source to maximise layer caching.
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+# Copy the full source tree and install torchtitan in editable mode.
+COPY . .
+RUN pip install -e .
+
+# Default entrypoint: bash (the JobSet manifest overrides this with torchrun).
+CMD ["bash"]

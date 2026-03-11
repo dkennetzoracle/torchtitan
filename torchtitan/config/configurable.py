@@ -119,7 +119,14 @@ class Configurable:
 
             if kwargs_in_config:
                 # All kwargs are config fields: validate and absorb into clone.
+                # Skip mismatch check for init=False fields — they can only be
+                # set via build(), so any value from build() is authoritative.
+                init_false_fields = {
+                    f.name for f in fields(self) if not f.init
+                }
                 for key, value in kwargs.items():
+                    if key in init_false_fields:
+                        continue
                     if hasattr(self, key):
                         existing = getattr(self, key)
                         if isinstance(existing, torch.Tensor):

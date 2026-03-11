@@ -355,11 +355,14 @@ def init_distributed(
         os.makedirs(dump_dir, exist_ok=True)
         _warn_overwrite_env(TRACE_FILE, f"{dump_dir}/{prefix}")
 
-    torch.distributed.init_process_group(
+    import inspect as _inspect
+    _ipg_kwargs: dict = dict(
         backend=_get_distributed_backend(enable_cpu_backend),
         timeout=timedelta(seconds=comm_config.init_timeout_seconds),
-        _ranks=ranks if ranks is not None else [],
     )
+    if "_ranks" in _inspect.signature(torch.distributed.init_process_group).parameters:
+        _ipg_kwargs["_ranks"] = ranks if ranks is not None else []
+    torch.distributed.init_process_group(**_ipg_kwargs)
 
     return torch.distributed.get_world_size()
 

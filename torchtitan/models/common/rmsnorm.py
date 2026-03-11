@@ -28,7 +28,7 @@ class RMSNorm(nn.RMSNorm, Module):
 
     @dataclass(kw_only=True, slots=True)
     class Config(Module.Config):
-        normalized_shape: int = field(init=False)
+        normalized_shape: int = field(init=False, default=0)
         eps: float = 1e-5
         elementwise_affine: bool = True
 

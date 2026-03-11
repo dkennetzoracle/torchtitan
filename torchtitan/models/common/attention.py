@@ -19,7 +19,12 @@ from torch.nn.attention.flex_attention import (
     create_block_mask,
     flex_attention,
 )
-from torch.nn.attention.varlen import varlen_attn
+try:
+    from torch.nn.attention.varlen import varlen_attn
+    _VARLEN_AVAILABLE = True
+except ImportError:
+    varlen_attn = None  # type: ignore[assignment]
+    _VARLEN_AVAILABLE = False
 from torch.types import Number
 
 from torchtitan.models.common.rmsnorm import RMSNorm
@@ -61,8 +66,9 @@ AttentionMasksType = dict[str, BlockMask] | BlockMask | VarlenMetadata
 
 
 class VarlenAttentionWrapper(torch.nn.Module):
-    _compiled_varlen_attn: ClassVar[Callable] = torch.compile(
-        varlen_attn, mode="max-autotune-no-cudagraphs"
+    _compiled_varlen_attn: ClassVar[Callable | None] = (
+        torch.compile(varlen_attn, mode="max-autotune-no-cudagraphs")
+        if _VARLEN_AVAILABLE else None
     )
 
     def forward(
@@ -73,7 +79,11 @@ class VarlenAttentionWrapper(torch.nn.Module):
         attention_masks: VarlenMetadata,
         scale: float | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-
+        if not _VARLEN_AVAILABLE:
+            raise ImportError(
+                "VarlenAttentionWrapper requires a recent PyTorch nightly with "
+                "torch.nn.attention.varlen support."
+            )
         cu_seq_q = attention_masks.cu_seq_q
         cu_seq_k = attention_masks.cu_seq_k
         max_q = attention_masks.max_q
@@ -127,9 +137,9 @@ class FlexAttentionWrapper(torch.nn.Module):
         flex_attention,
         # This options also encapsulate max-autotune-no-cudagraphs.
         options={
-            # TODO: turn on this after PyTorch fix is landed again
-            # https://github.com/pytorch/pytorch/pull/175733.
-            "wrap_inductor_compiled_regions": False,
+            # wrap_inductor_compiled_regions omitted: not available in older torch
+            # versions and defaults to False (disabled) in newer ones.
+            # TODO: re-enable after https://github.com/pytorch/pytorch/pull/175733
             "max_autotune": True,
             "coordinate_descent_tuning": True,
             "triton.cudagraphs": False,

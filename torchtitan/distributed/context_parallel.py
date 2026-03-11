@@ -10,13 +10,17 @@ from typing import Any, cast
 import torch
 import torch.nn as nn
 from torch.distributed.device_mesh import DeviceMesh
-from torch.distributed.tensor.experimental._attention import (
-    _context_parallel_shard,
-    _ContextParallel,
-    _enable_context_parallel_dispatcher,
-    _HeadTailLoadBalancer,
-    _PTRRLoadBalancer,
-)
+try:
+    from torch.distributed.tensor.experimental._attention import (
+        _context_parallel_shard,
+        _ContextParallel,
+        _enable_context_parallel_dispatcher,
+        _HeadTailLoadBalancer,
+        _PTRRLoadBalancer,
+    )
+    _CP_AVAILABLE = True
+except ImportError:
+    _CP_AVAILABLE = False
 from torch.distributed.tensor.parallel import parallelize_module
 from torch.nn.attention.flex_attention import BlockMask
 
@@ -47,6 +51,11 @@ def apply_cp_to_attention_module(
     Raises:
         NotImplementedError: If attention_type is "varlen"
     """
+    if not _CP_AVAILABLE:
+        raise ImportError(
+            "Context Parallelism requires a recent PyTorch nightly. "
+            "Update your PyTorch installation to use CP (cp_degree > 1)."
+        )
     # Apply context parallelism to every attention module
     # TODO: make seq_dim configurable once the implementation doesn't assume 2
     # internally.
@@ -145,6 +154,8 @@ def cp_shard(
     """
     Shard inputs and attention masks across the context parallel mesh.
 
+    Requires a recent PyTorch nightly with Context Parallelism support.
+
     This function distributes input tensors across devices in the CP mesh
     along the sequence dimension, enabling efficient processing. It optionally
     uses a load balancer to handle uneven computation workload.
@@ -177,6 +188,11 @@ def cp_shard(
         ValueError: If load_balancer_type is "ptrr" and attention_masks
             is None or a dict
     """
+    if not _CP_AVAILABLE:
+        raise ImportError(
+            "Context Parallelism requires a recent PyTorch nightly. "
+            "Update your PyTorch installation to use CP (cp_degree > 1)."
+        )
     seq_len = inputs[0].size(input_seq_dim)
     cp_world_size = cp_mesh.size(0)
 

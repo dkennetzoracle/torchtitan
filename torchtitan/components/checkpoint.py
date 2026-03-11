@@ -23,9 +23,13 @@ import torch.distributed as dist
 import torch.distributed.checkpoint as dcp
 import torch.nn as nn
 from torch.distributed.checkpoint import HuggingFaceStorageWriter
-from torch.distributed.checkpoint._consolidate_hf_safetensors import (
-    consolidate_safetensors_files_on_every_rank,
-)
+try:
+    from torch.distributed.checkpoint._consolidate_hf_safetensors import (
+        consolidate_safetensors_files_on_every_rank,
+    )
+    _CONSOLIDATE_HF_AVAILABLE = True
+except ImportError:
+    _CONSOLIDATE_HF_AVAILABLE = False
 from torch.distributed.checkpoint.staging import DefaultStager, StagingOptions
 from torch.distributed.checkpoint.state_dict import (
     get_model_state_dict,
@@ -585,6 +589,11 @@ class CheckpointManager(Configurable):
             )
 
         if to_hf and fqn_to_index_mapping:
+            if not _CONSOLIDATE_HF_AVAILABLE:
+                raise ImportError(
+                    "Saving HuggingFace checkpoints requires a recent PyTorch nightly. "
+                    "Update your PyTorch installation."
+                )
             consolidate_safetensors_files_on_every_rank(
                 input_dir=os.path.join(checkpoint_id, "sharded"),
                 output_dir=checkpoint_id,
