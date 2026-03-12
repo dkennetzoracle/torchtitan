@@ -2,6 +2,14 @@
 
 Runs `llama3_health_check` — Llama3-8B with synthetic data — across `BM.GPU.MI300X.8` nodes and reports TFLOPs/MFU. No dataset or tokenizer required.
 
+## Setup
+
+Go to https://github.com/oracle-quickstart/oci-hpc-oke -> Deploy to Oracle Cloud to deploy your OKE cluster.
+
+When it is deployed, connect locally by going to console -> OKE -> Select your cluster -> Actions -> Access cluster -> Local Access.
+
+You are now ready to deploy in the next steps.
+
 ## Prerequisites
 
 - OCI OKE cluster with `BM.GPU.MI300X.8` nodes
