@@ -20,10 +20,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
 WORKDIR /opt/torchtitan
 
 # Install Python dependencies before copying source to maximise layer caching.
-COPY requirements.txt .
-# Absolute path + a state dump: under kaniko the relative form failed with the
-# file "missing" while COPY reported success — the dump proves where things are.
-RUN pwd && ls -la && ls -la /opt/torchtitan 2>/dev/null; pip install -r /opt/torchtitan/requirements.txt
+# requirements.txt at the repo root is a SYMLINK to .ci/docker/requirements.txt;
+# docker COPY dereferences context symlinks but kaniko preserves them, leaving a
+# dangling link until `COPY . .` runs. Copy the real file explicitly so both
+# builders agree.
+COPY .ci/docker/requirements.txt ./requirements.txt
+RUN pip install -r requirements.txt
 
 # Copy the full source tree and install torchtitan in editable mode.
 COPY . .
