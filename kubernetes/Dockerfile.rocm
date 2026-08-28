@@ -14,7 +14,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-WORKDIR /workspace/torchtitan
+# /opt, not /workspace: kaniko (which builds this in-cluster for KTLO) treats
+# /workspace — its own default working directory — unreliably during layer
+# snapshotting, silently losing COPY results there. Any other path is safe.
+WORKDIR /opt/torchtitan
 
 # Install Python dependencies before copying source to maximise layer caching.
 COPY requirements.txt .
