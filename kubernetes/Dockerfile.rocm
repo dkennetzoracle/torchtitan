@@ -21,7 +21,9 @@ WORKDIR /opt/torchtitan
 
 # Install Python dependencies before copying source to maximise layer caching.
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+# Absolute path + a state dump: under kaniko the relative form failed with the
+# file "missing" while COPY reported success — the dump proves where things are.
+RUN pwd && ls -la && ls -la /opt/torchtitan 2>/dev/null; pip install -r /opt/torchtitan/requirements.txt
 
 # Copy the full source tree and install torchtitan in editable mode.
 COPY . .
