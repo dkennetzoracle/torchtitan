@@ -8,7 +8,12 @@
 # correct PyTorch + ROCm + RCCL stack verified to work on MI300X hardware.
 # See: https://rocm.docs.amd.com/projects/ai-developer-hub/en/latest/notebooks/pretrain/torchtitan_deepseek.html
 
-FROM docker.io/rocm/primus:v25.9_gfx942
+# v25.11 = ROCm 7.1 / RCCL 2.27.x. The v25.9 image's RCCL 2.26.6 pays a
+# ~113s first-attempt QP timeout per cross-node communicator on RoCE fabrics
+# where 2.27.7 connects instantly (isolated live on an MI300X pair, KTLO #454)
+# — a training mesh builds dozens of communicators serially, so 2.26.6 made
+# multi-node init exceed torch's watchdogs.
+FROM docker.io/rocm/primus:v25.11
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
